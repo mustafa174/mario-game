@@ -1,0 +1,5 @@
+{
+  "name": "NES-Accurate Platformer Clone",
+  "description": "A behaviorally accurate clone of the original 1985 platformer mechanics, featuring precise physics, tile-based collision, and object interactions.",
+  "requestFramePermissions": []
+}
