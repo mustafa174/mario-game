@@ -16,7 +16,6 @@ import {
   BOUNCE_FORCE,
   GOOMBA_SPEED,
   KOOPA_SPEED,
-  SHELL_SPEED,
   COLOR_SKY,
   COLOR_GROUND,
   COLOR_BRICK,
@@ -66,7 +65,8 @@ class Enemy extends Entity {
 
   constructor(type: EntityType, x: number, y: number) {
     super(type, x, y, 16, 16);
-    this.vx = -GOOMBA_SPEED;
+    const speed = type === EntityType.Koopa ? KOOPA_SPEED : GOOMBA_SPEED;
+    this.vx = -speed;
   }
 }
 
@@ -102,6 +102,7 @@ export class GameEngine {
   
   level: { tiles: number[][]; width: number; height: number };
   cameraX: number = 0;
+  private respawnTimeoutId: number | null = null;
   
   timeLeft: number = 400;
   score: number = 0;
@@ -270,6 +271,13 @@ export class GameEngine {
         this.player.x = this.cameraX;
         this.player.vx = 0;
     }
+
+    // Constrain to level bounds (avoid relying on out-of-bounds "solid" tiles)
+    const maxX = this.level.width - this.player.width;
+    if (this.player.x > maxX) {
+        this.player.x = maxX;
+        this.player.vx = 0;
+    }
   }
 
   updateEnemies() {
@@ -305,6 +313,9 @@ export class GameEngine {
         e.y += e.vy;
         e.grounded = false;
         this.checkTileCollision(e, false);
+
+        // Keep facing direction aligned to velocity
+        if (e.vx !== 0) e.dir = e.vx > 0 ? Direction.Right : Direction.Left;
 
         // Turn around on ledge for basic enemies if desired, but SMB goombas walk off.
         
@@ -353,9 +364,13 @@ export class GameEngine {
       audioManager.playDie();
       this.state = GameState.GameOver;
       // In a full game, we'd pause, play animation, reduce lives.
-      setTimeout(() => {
+      if (this.respawnTimeoutId !== null) {
+          window.clearTimeout(this.respawnTimeoutId);
+      }
+      this.respawnTimeoutId = window.setTimeout(() => {
           this.reset();
           this.state = GameState.Playing; // Instant restart for this demo
+          this.respawnTimeoutId = null;
       }, 3000);
   }
 
@@ -377,18 +392,27 @@ export class GameEngine {
     for (let y = startY; y <= endY; y++) {
         for (let x = startX; x <= endX; x++) {
             if (y < 0 || y >= this.level.tiles.length) continue;
+            if (x < 0 || x >= this.level.tiles[y].length) continue;
             
             const tile = this.level.tiles[y][x];
             if (this.isSolid(tile)) {
                 if (isXAxis) {
                     if (entity.vx > 0) {
                         entity.x = x * TILE_SIZE - entity.width;
-                        entity.vx = 0;
-                        if (entity instanceof Enemy) entity.vx = -entity.vx; // Turn around
+                        if (entity instanceof Enemy) {
+                            entity.vx = -this.getEnemySpeed(entity);
+                            entity.dir = Direction.Left;
+                        } else {
+                            entity.vx = 0;
+                        }
                     } else if (entity.vx < 0) {
                         entity.x = (x + 1) * TILE_SIZE;
-                        entity.vx = 0;
-                        if (entity instanceof Enemy) entity.vx = -entity.vx;
+                        if (entity instanceof Enemy) {
+                            entity.vx = this.getEnemySpeed(entity);
+                            entity.dir = Direction.Right;
+                        } else {
+                            entity.vx = 0;
+                        }
                     }
                 } else {
                     if (entity.vy > 0) {
@@ -438,6 +462,10 @@ export class GameEngine {
 
   isSolid(tile: number): boolean {
       return tile !== TileType.Air && tile !== TileType.FlagPole && tile !== TileType.FlagTop;
+  }
+
+  private getEnemySpeed(enemy: Enemy): number {
+      return enemy.type === EntityType.Koopa ? KOOPA_SPEED : GOOMBA_SPEED;
   }
 
   checkEntityCollision(e1: Entity, e2: Entity): boolean {
@@ -595,6 +623,10 @@ export class GameEngine {
   }
 
   destroy() {
+    if (this.respawnTimeoutId !== null) {
+        window.clearTimeout(this.respawnTimeoutId);
+        this.respawnTimeoutId = null;
+    }
     this.input.destroy();
   }
 }
